@@ -1,0 +1,81 @@
+Ilie Vlad-Florin 321CB
+
+	Functia init_conn primeste ca argumente o structura de tipul sockaddr_in,
+un sir de caractere numit ip ce contine ip-ul serverului dns la care vreau sa
+ma conectez si o variabila de tip int prin care ii voi semnala functiei daca
+vreau sa creeze un socket sau daca vreau doar sa schimbe ip-ul serverului dns.
+	In interiorul acestei funcii se va initializa structura sockaddr_in cu
+ip-ul serverului dns, port 53. Tot aici va fi setat un timeout de 3 secunde
+(recvfrom va astepta 3 secunde un raspuns din partea serverului) prin
+intermediul functiei setsockopt. La final, init_conn va returna socketul udp
+creat.
+
+	In functia create_msg va fi creat mesajul ce trebuie trimis catre server.
+Functia primeste ca argumente doua siruri de caractere (nume = numele de
+domeniu/ip-ul; q = tipul intrebarii) si mai primeste un pointer catre un int
+unde va stoca dimensiunea totala a mesajului.
+	Pentru inceput sa vor aloca vectorii necesari. Printre acesti vectori se
+va afla si "arpa" ce contine stringul "in-addr.arpa" dar in format tip label
+pentru a putea fi trimis direct catre server. Apoi sunt initializate
+variabilele header si question cu 0. In header vor fi setate: id-ul cererii,
+recursivitatea, numarul de intrebari, tipul intrebarii si clasa. Dupa aceea,
+header va fi copiat vectorul tosend (mesajul pentru server).
+	Se va varifica apoi daca cererea este de tip PTR sau nu pentru a stii
+cum trebuie procesat numele. Daca nu e PTR, numele va fi impartit la punct
+iar in vector sa va pune mai intai dimensiunea fiecarui grup apoi grupul
+respectiv. Daca e PTR, procedeul este asemanator numai ca grupurile se vor
+pune in ordine inversa apoi va fi adaugat la final si vectorul arpa.
+	Dupa scrierea numelui, se va copia si continutul variabile question si
+va fi actualizata variabila query_size cu dimensiunea curenta a mesajului.
+La final, mesajul va fi scris in fisierul message.log in format hexa iar
+functia va returna un pointer catre mesaj.
+	
+	Avand in vedere ca numele din raspunsurile unui server dns pot fi in
+format label, pointer sau o combinatie intre cele doua, functia name_reader
+are rolul de a extrage numele cerut din datele intoarse de la server.
+	Parametrii primiti sunt: sir de caractere (recv) ce contine intregul
+mesaj primit de la server, sir de caractere (rez) unde functia va scrie
+stringul extras din mesaj si un int ce reprezinta indexul de unde va incepe
+cautarea. Functia va cauta octetul 0xc0 sau lungimi de grupuri. Daca va gasi
+lungimea unui grup (notata in cod cu end) va muta in rez urmatoarele end
+caractere. In cazul in care gaseste 0xc0, va continua parcurgerea de la pozitia
+indicata iar daca va gasi 0, atunci inseamna ca a ajung la sfarsitul
+stringului. Daca gaseste un pointer, inseamna ca dupa acest pointer nu mai
+exista alte caractere care apartin stringului cautat deci finalul acestui
+raspuns este dupa pointer. Altfel, finalul se va afla la sfarsitul stringului.
+
+	Functia recv_msg se ocupa cu preluarea unui mesaj de la serverul dns si
+interpretarea lui. Primeste ca parametri: socketul udp, lungimea mesajului
+trimis catre server (adica header + question), numele de domeniu/ip-ul,
+tipul intrebarii si adresa serverului dns.
+	Se va initializa cu 0 vectorul unde va fi pus mesajul primit de la server
+apoi se vor citi datele primite. Functia recvfrom va astepta 3 secunde. Daca
+id-ul este 0 inseamna ca a fost timeout. Daca nu, inseamna ca serverul a
+raspuns. In continuare, se va verifica rcode. Daca a existat orice fel de
+eroare, functia va returna 0. Daca nu, va fi scrisa in fisier cererea data
+de client si se va trece mai departe.
+	Prelucrarea datelor va incepe cu datele de dupa sectiunile header si
+question. Functia are in continuare un for care merge de la 0 la numarul total
+de raspunsuri (answer + authority + additional). Pentru fiecare raspuns, va fi
+citit numele si scris in fisier. Se va inspecta in continuare continutul
+raspunsului (mai exact tipul acestuia).
+	Pentru tipul A: se vor scrie in fisier cei 4 octeti ai ip-ului.
+	Pentru tipul NS: se va extrage numele din mesaj si va fi scris in fisier.
+	Pentru tipul MX: se va citi mai intai preference din mesaj, apoi va fi
+extras numele serverului mx din mesaj si vor fi scrise in fisier.
+	Pentru tipul CNAME: extragerea numelui si scrierea lui in fisier.
+	Pentru tipul TXT: se va citi numarul de caractere ale texului apoi se va
+vor parcurge cele txtlen caractere si vor fi scrise in fisier unul cate unul.
+	Pentru tipul SOA: se vor citi stringurile primary ns si admin mb din
+mesaj si se vor scrie in fisier. Apoi se va citi intreaga structura dns_re_soa
+din mesaj si vor fi scrise in fisier si variabilele din aceata.
+	Iar pentru tipul PTR: se va citi numele si se va scrie.
+	In final functia va returna 1 pentru a indica faptul ca citirea si
+procesarea au avut succes.
+
+	In main, se deschide fisierul cu servere dns si se cere crearea mesajului.
+Apoi se parcurge fisierul cu servere. Daca linia nu este comentata sau nu este
+goala, se va initializa socketul (daca nu este deja initializat), se va trimite
+mesajul catre server si apoi se va apela functia recv_msg pentru a primi
+raspunsul si pentru a-l procesa. Daca serverul dns nu este bun, recv_msg va
+intoarce 0 sau -1 si se va trece la urmatoarea linie din fisierul cu servere.
